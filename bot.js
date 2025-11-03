@@ -7,6 +7,8 @@ let script = document.createElement('script'); script.origin = 'anonymous'; scri
 
 let sampleRateFps = 5
 
+const SERVER_URL = 'http://localhost:8000/ai'
+
 let el_playButton;
 let el_gameCanvas;
 let el_captureCanvas;
@@ -24,10 +26,6 @@ function getGameCanvasElement() {
 
 function getPlayButtonElement() {
   return document.querySelector('div[class="btnt nsi sadg1"]');
-}
-
-function getScoreTextElement() {
-  return [1];
 }
 
 function getLastScoreTextElement() {
@@ -54,13 +52,64 @@ function createSecondaryCanvas(width, height) {
   return canvas;
 }
 
-function captureFrame() {
-  el_captureCtx.drawImage(el_gameCanvas, 0, 0, el_captureCanvas.width, el_captureCanvas.height);
-  let pixels = el_captureCtx.getImageData(0, 0, el_captureCanvas.width, el_captureCanvas.height);
-  // Encode pixels to a flat array and return it
-  // Assuming we want to return a Uint8ClampedArray or Array of pixel values
-  // pixels.data is a Uint8ClampedArray of [r,g,b,a,...]
-  return Array.from(pixels.data);
+// function captureFrame() {
+//   el_captureCtx.drawImage(el_gameCanvas, 0, 0, el_captureCanvas.width, el_captureCanvas.height);
+//   let pixels = el_captureCtx.getImageData(0, 0, el_captureCanvas.width, el_captureCanvas.height);
+//   // Encode pixels to a flat array and return it
+//   // Assuming we want to return a Uint8ClampedArray or Array of pixel values
+//   // pixels.data is a Uint8ClampedArray of [r,g,b,a,...]
+//   return Array.from(pixels.data);
+// }
+
+function getSnakeData(snake) {
+  return {
+    x: snake.xx,
+    y: snake.yy,
+    angle: snake.ang,
+    speed: snake.wmd,
+    boosted: snake.sfr,
+  }
+}
+
+function getPlayer() {
+  return getSnakeData(window.slither)
+}
+
+function getFoodMap() {
+  let foods = window.foods.filter(f => f)
+  return foods.map(f => {
+    return {
+      x: f.xx,
+      y: f.yy,
+      size: f.sz
+    }
+  })
+}
+
+function getPreyMap() {
+  return window.preys.map(p => {
+    return {
+      x: p.xx,
+      y: p.yy,
+      size: p.sz
+    }
+  })
+}
+
+function getEnemiesMap() {
+  let playerSnake = window.slither
+  let allSnakes = window.os
+  return Object.values(allSnakes).filter(s => s !== playerSnake).map(getSnakeData)
+}
+
+function getSignals() {
+  return {
+    player: getPlayer(),
+    food: getFoodMap(),
+    prey: getPreyMap(),
+    enemies: getEnemiesMap(),
+    score: getScore(),
+  }
 }
 
 let previousMousePosition = {
@@ -93,16 +142,14 @@ function setSpeedboost(enabled) {
 
 let inflightQuery = false
 async function aiQuery() {
+  let signals = getSignals()
   let response = await fetch(SERVER_URL, {
     method: 'POST',
-    body: JSON.stringify({
-      frame: captureFrame(),
-    }),
+    body: JSON.stringify(signals),
   }).then(response => response.json())
 
   return response.angle, response.speedboost
 }
-
 
 async function gameLoop() {
   if (!isAlive()) {
@@ -124,8 +171,8 @@ async function gameLoop() {
   }
 
   inflightQuery = true
-  // let resp = await aiQuery()
-  console.log('here would be ai query', getScore())
+  let resp = await aiQuery()
+  console.log('here would be ai query', resp, getScore())
   inflightQuery = false
 }
 
