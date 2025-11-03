@@ -82,18 +82,12 @@ class SimpleHandler(BaseHTTPRequestHandler):
     y_coords = [f['y'] for f in food]
     sizes = [f.get('size', 1) for f in food]
 
-    # Determine grid bounds with 10 units per cell
-    cell_size = 10
-    x_min, x_max = min(x_coords), max(x_coords)
-    y_min, y_max = min(y_coords), max(y_coords)
+    # Fixed grid bounds: -1000 to 1000 on both axes
+    cell_size = 20
+    x_min, x_max = -1500, 1500
+    y_min, y_max = -1500, 1500
 
-    # Expand bounds to align with cell grid
-    x_min = (x_min // cell_size) * cell_size
-    x_max = ((x_max // cell_size) + 1) * cell_size
-    y_min = (y_min // cell_size) * cell_size
-    y_max = ((y_max // cell_size) + 1) * cell_size
-
-    # Create grid
+    # Create grid covering the full range
     x_bins = np.arange(x_min, x_max + cell_size, cell_size)
     y_bins = np.arange(y_min, y_max + cell_size, cell_size)
 
@@ -116,6 +110,8 @@ class SimpleHandler(BaseHTTPRequestHandler):
         heatmap_data, cmap='hot', interpolation='nearest',
         extent=[x_min, x_max, y_min, y_max], aspect='auto', origin='lower'
       )
+      SimpleHandler._heatmap_axes.set_xlim(x_min, x_max)
+      SimpleHandler._heatmap_axes.set_ylim(y_min, y_max)
       SimpleHandler._heatmap_cbar = SimpleHandler._heatmap_figure.colorbar(
         SimpleHandler._heatmap_im, ax=SimpleHandler._heatmap_axes, label='Food density (weighted by size)'
       )
@@ -125,26 +121,13 @@ class SimpleHandler(BaseHTTPRequestHandler):
       SimpleHandler._heatmap_axes.grid(True, alpha=0.3)
       plt.show(block=False)
     else:
-      # Update existing plot
-      current_shape = SimpleHandler._heatmap_im.get_array().shape
-      if heatmap_data.shape != current_shape:
-        # Shape changed, need to clear and redraw
-        SimpleHandler._heatmap_axes.clear()
-        SimpleHandler._heatmap_im = SimpleHandler._heatmap_axes.imshow(
-          heatmap_data, cmap='hot', interpolation='nearest',
-          extent=[x_min, x_max, y_min, y_max], aspect='auto', origin='lower'
-        )
-        SimpleHandler._heatmap_cbar.update_normal(SimpleHandler._heatmap_im)
-        SimpleHandler._heatmap_axes.set_xlabel('X position')
-        SimpleHandler._heatmap_axes.set_ylabel('Y position')
-        SimpleHandler._heatmap_axes.set_title('Food Distribution Heatmap (10 units per cell)')
-        SimpleHandler._heatmap_axes.grid(True, alpha=0.3)
-      else:
-        # Same shape, just update data
-        SimpleHandler._heatmap_im.set_data(heatmap_data)
-        SimpleHandler._heatmap_im.set_extent([x_min, x_max, y_min, y_max])
-        SimpleHandler._heatmap_im.set_clim(vmin=heatmap_data.min(), vmax=heatmap_data.max())
-        SimpleHandler._heatmap_cbar.update_normal(SimpleHandler._heatmap_im)
+      # Update existing plot (shape is always the same now with fixed range)
+      SimpleHandler._heatmap_im.set_data(heatmap_data)
+      SimpleHandler._heatmap_im.set_extent([x_min, x_max, y_min, y_max])
+      SimpleHandler._heatmap_im.set_clim(vmin=heatmap_data.min(), vmax=heatmap_data.max())
+      SimpleHandler._heatmap_axes.set_xlim(x_min, x_max)
+      SimpleHandler._heatmap_axes.set_ylim(y_min, y_max)
+      SimpleHandler._heatmap_cbar.update_normal(SimpleHandler._heatmap_im)
       SimpleHandler._heatmap_figure.canvas.draw()
       SimpleHandler._heatmap_figure.canvas.flush_events()
 
@@ -158,8 +141,8 @@ class SimpleHandler(BaseHTTPRequestHandler):
     if not food:
       return { "angle": 0, "speedboost": False }
 
-    relative_food = list(map(lambda f: { "x": f['x'] - player['x'], "y": f['y'] - player['y'], "size": f['size'] }, food))
-    print("relative food", relative_food)
+    relative_food = list(map(lambda f: { "x": f['x'] - player['x'], "y": -(f['y'] - player['y']), "size": f['size'] }, food))
+    # print("relative food", relative_food)
 
     self.generate_food_heatmap(relative_food)
 
