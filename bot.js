@@ -62,6 +62,10 @@ function createSecondaryCanvas(width, height) {
 // }
 
 function getSnakeData(snake) {
+  if (!snake) {
+    return null
+  }
+
   return {
     x: snake.xx,
     y: snake.yy,
@@ -148,7 +152,7 @@ async function aiQuery() {
     body: JSON.stringify(signals),
   }).then(response => response.json())
 
-  return response.angle, response.speedboost
+  return response
 }
 
 async function gameLoop() {
@@ -171,8 +175,14 @@ async function gameLoop() {
   }
 
   inflightQuery = true
-  let resp = await aiQuery()
-  console.log('here would be ai query', resp, getScore())
+
+  try {
+    let resp = await aiQuery()
+    console.log('here would be ai query', resp, getScore())
+  } catch (error) {
+    console.error('error in ai query', error)
+  }
+
   inflightQuery = false
 }
 
