@@ -1,6 +1,7 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+import math
 import matplotlib
 # matplotlib.use('TkAgg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
@@ -78,11 +79,13 @@ class SimpleHandler(BaseHTTPRequestHandler):
     y_coords = [f['y'] for f in food]
     sizes = [f.get('size', 1) for f in food]
 
-    vmin = -25
-    vmax = 25
-    cell_size = 30
-    x_min, x_max = -2000, 2000
-    y_min, y_max = -2000, 2000
+    density = 4
+    zoom = 2000
+    cell_size = math.sqrt(zoom)
+    vmin = -(density * cell_size) / 4
+    vmax = (density * cell_size) / 4
+    x_min, x_max = -zoom, zoom
+    y_min, y_max = -zoom, zoom
 
     # Create grid covering the full range
     x_bins = np.arange(x_min, x_max + cell_size, cell_size)
