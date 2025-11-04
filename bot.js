@@ -15,9 +15,41 @@ let el_captureCanvas;
 let el_captureCtx;
 
 let isPlaying = false
+let killCount = 0
+
+let prevPtsMap = {}
+
+function calcDeltas(snake) {
+    if (!snake)
+      return
+
+    // if ptsPrev does not exist the loop will not run resulting in empty deltas
+    let objPrev = prevPtsMap[snake.id]
+    if (!objPrev || Date.now() - objPrev.time > 500) {
+      objPrev = { pts: [], time: Date.now() }
+    }
+    const ptsPrev = objPrev.pts
+    const ptsCur = snake.pts.slice().reverse()
+    const deltas = []
+    for (let i = 0; i < ptsCur.length && i < ptsPrev.length; i++) {
+        let delta = [ptsCur[i].xx - ptsPrev[i].xx, ptsCur[i].yy - ptsPrev[i].yy]
+        deltas.push(delta)
+    }
+
+    prevPtsMap[snake.id] = { pts: ptsCur, time: Date.now() }
+    // the last delta is buggy because snakes grow
+    // (also it's reversed, so technically the first)
+    deltas.pop()
+    deltas.shift()
+    return deltas
+}
 
 function isAlive() {
-  return el_playButton.style.opacity == '0.38';
+  return window.slither && !window.slither.dead;
+}
+
+function getKillCount() {
+  return window.slither?.kill_count || 0
 }
 
 function getGameCanvasElement() {
@@ -66,6 +98,8 @@ function getSnakeData(snake) {
     return null
   }
 
+  const deltas = calcDeltas(snake)
+
   return {
     x: snake.xx,
     y: snake.yy,
@@ -74,7 +108,14 @@ function getSnakeData(snake) {
     boosted: snake.sfr,
     // TODO: calculate actual size?
     // also, gptz contains "dead" parts (if worm boosted and lost weight)
-    parts: snake.gptz.map(p => { return { x: p.xx, y: p.yy, size: 2 * snake.gptz.length } })
+    parts: snake.pts.slice().reverse().map((p, i) => {
+      return {
+        x: p.xx,
+        y: p.yy,
+        size: snake.pts.length,
+        delta: deltas[i]
+      }
+    })
   }
 }
 
@@ -110,7 +151,12 @@ function getEnemiesMap() {
 }
 
 function getSignals() {
+  const currentKillCount = getKillCount()
+  const newKills = currentKillCount - killCount
+  killCount = currentKillCount
+
   return {
+    kills: newKills,
     player: getPlayer(),
     food: getFoodMap(),
     prey: getPreyMap(),
@@ -169,6 +215,8 @@ async function gameLoop() {
     if (!isPlaying) {
       console.log('game started!')
       isPlaying = true
+      killCount = getKillCount()
+      prevPtsMap = {}
       return // skip this frame
     }
   }
@@ -184,7 +232,7 @@ async function gameLoop() {
     let resp = await aiQuery()
     // console.log('here would be ai query', resp, getScore())
   } catch (error) {
-    console.error('error in ai query', error)
+    // console.error('error in ai query', error)
   }
 
   inflightQuery = false

@@ -2,7 +2,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 import matplotlib
-# matplotlib.use('Agg')  # Use non-interactive backend
+# matplotlib.use('TkAgg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -11,6 +11,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
   _heatmap_figure = None
   _heatmap_axes = None
   _heatmap_im = None
+  _heatmap_quiver = None
   _interactive_init = False
 
   def do_GET(self):
@@ -65,7 +66,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
   def generate_food_heatmap(self, food):
     # Initialize interactive mode on first call
     if not SimpleHandler._interactive_init:
-      plt.ion()
+      # plt.ion()
       SimpleHandler._interactive_init = True
 
     if not food or len(food) == 0:
@@ -76,11 +77,11 @@ class SimpleHandler(BaseHTTPRequestHandler):
     y_coords = [f['y'] for f in food]
     sizes = [f.get('size', 1) for f in food]
 
-    vmin = -25
-    vmax = 25
-    cell_size = 60
-    x_min, x_max = -1500, 1500
-    y_min, y_max = -1500, 1500
+    vmin = -50
+    vmax = 50
+    cell_size = 30
+    x_min, x_max = -2000, 2000
+    y_min, y_max = -2000, 2000
 
     # Create grid covering the full range
     x_bins = np.arange(x_min, x_max + cell_size, cell_size)
@@ -96,6 +97,66 @@ class SimpleHandler(BaseHTTPRequestHandler):
     # Rotate and flip for correct orientation
     heatmap_data = np.rot90(heatmap_data)
     heatmap_data = np.flipud(heatmap_data)
+
+    # Calculate vector fields from deltas
+    # Create arrays to store aggregated vectors per cell
+    num_y_cells = len(y_bins) - 1
+    num_x_cells = len(x_bins) - 1
+    U = np.zeros((num_y_cells, num_x_cells))  # X component
+    V = np.zeros((num_y_cells, num_x_cells))  # Y component
+    cell_counts = np.zeros((num_y_cells, num_x_cells))  # Count of items per cell
+
+    # Aggregate deltas per cell
+    for f in food:
+      x = f['x']
+      y = f['y']
+      delta = f.get('delta')
+      
+      if delta is None or not isinstance(delta, (list, tuple)) or len(delta) < 2:
+        continue
+      
+      delta = [delta[0] * 500, delta[1] * -500]
+
+      # Find which cell this food item belongs to
+      x_idx = np.digitize(x, x_bins) - 1
+      y_idx = np.digitize(y, y_bins) - 1
+      
+      # Ensure indices are within bounds
+      if 0 <= x_idx < num_x_cells and 0 <= y_idx < num_y_cells:
+        # Add delta to cell (will be averaged later)
+        U[y_idx, x_idx] += delta[0]
+        V[y_idx, x_idx] += delta[1]
+        cell_counts[y_idx, x_idx] += 1
+
+    # Average vectors per cell (avoid division by zero)
+    non_zero_mask = cell_counts > 0
+    U[non_zero_mask] /= cell_counts[non_zero_mask]
+    V[non_zero_mask] /= cell_counts[non_zero_mask]
+
+    # Rotate and flip vectors to match heatmap orientation
+    U = np.rot90(U)
+    U = np.flipud(U)
+    V = np.rot90(V)
+    V = np.flipud(V)
+
+    # Create mask for non-zero vectors (only show vectors where magnitude > 0)
+    vector_magnitude = np.sqrt(U**2 + V**2)
+    non_zero_vector_mask = vector_magnitude > 0
+
+    # Create meshgrid for vector positions (center of each cell)
+    x_centers = (x_edges[:-1] + x_edges[1:]) / 2
+    y_centers = (y_edges[:-1] + y_edges[1:]) / 2
+    X, Y = np.meshgrid(x_centers, y_centers)
+    
+    # Rotate and flip meshgrid to match heatmap
+    X = np.rot90(X)
+    X = np.flipud(X)
+    Y = np.rot90(Y)
+    Y = np.flipud(Y)
+
+    # Mask vectors to only show non-empty ones
+    U_masked = np.ma.masked_where(~non_zero_vector_mask, U)
+    V_masked = np.ma.masked_where(~non_zero_vector_mask, V)
 
     # Update existing plot or create new one
     if SimpleHandler._heatmap_figure is None:
@@ -124,12 +185,32 @@ class SimpleHandler(BaseHTTPRequestHandler):
       SimpleHandler._heatmap_axes.add_patch(circle_patch)
       # SimpleHandler._heatmap_center_circle = circle_patch
 
+      # Add quiver plot for vectors (only non-empty vectors will be shown due to masking)
+      SimpleHandler._heatmap_quiver = SimpleHandler._heatmap_axes.quiver(
+        X, Y, U_masked, V_masked,
+        scale=200,  # Adjust scale to control arrow size (higher = smaller arrows)
+        width=0.003,  # Arrow width
+        color='white',
+        alpha=0.7,
+        angles='xy',
+        scale_units='xy'
+      )
+
       plt.show(block=False)
     else:
       # Update existing plot (shape is always the same now with fixed range)
       SimpleHandler._heatmap_im.set_data(heatmap_data)
       #SimpleHandler._heatmap_im.set_clim(vmin=heatmap_data.min(), vmax=heatmap_data.max())
-      SimpleHandler._heatmap_figure.canvas.draw()
+      
+      # Update quiver vectors (recalculate mask for updated vectors)
+      if SimpleHandler._heatmap_quiver is not None:
+        vector_magnitude = np.sqrt(U**2 + V**2)
+        non_zero_vector_mask = vector_magnitude > 0
+        U_masked = np.ma.masked_where(~non_zero_vector_mask, U)
+        V_masked = np.ma.masked_where(~non_zero_vector_mask, V)
+        SimpleHandler._heatmap_quiver.set_UVC(U_masked, V_masked)
+      
+      SimpleHandler._heatmap_figure.canvas.draw_idle()
       SimpleHandler._heatmap_figure.canvas.flush_events()
 
   def handle_ai(self, signals):
@@ -143,11 +224,12 @@ class SimpleHandler(BaseHTTPRequestHandler):
     enemies = signals.get("enemies")
     if food:
       for enemy in enemies:
-        for enemy_part in enemy['parts']:
+        for i, enemy_part in enumerate(enemy['parts']):
           food.append({
             'x': enemy_part['x'],
             'y': enemy_part['y'],
-            'size': -50,
+            'size': -enemy_part['size'] * (5 if i == 0 else 1),
+            'delta': enemy_part.get('delta')
           })
 
       for p in prey:
@@ -155,7 +237,12 @@ class SimpleHandler(BaseHTTPRequestHandler):
 
       food += prey
 
-      relative_food = list(map(lambda f: { "x": f['x'] - player['x'], "y": -(f['y'] - player['y']), "size": f['size'] }, food))
+      relative_food = list(map(lambda f: { 
+        "x": f['x'] - player['x'], 
+        "y": -(f['y'] - player['y']), 
+        "size": f['size'],
+        "delta": f.get('delta')
+      }, food))
       # print("relative food", relative_food)
       self.generate_food_heatmap(relative_food)
 
