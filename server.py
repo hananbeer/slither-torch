@@ -11,7 +11,6 @@ class SimpleHandler(BaseHTTPRequestHandler):
   _heatmap_figure = None
   _heatmap_axes = None
   _heatmap_im = None
-  _heatmap_cbar = None
   _interactive_init = False
 
   def do_GET(self):
@@ -22,11 +21,6 @@ class SimpleHandler(BaseHTTPRequestHandler):
       except Exception as e:
         content = b"error: " + str(e).encode()
         self.send_response(500)
-    elif self.path == "/ai":
-      signals = {}
-      content = json.dumps(self.handle_ai(signals)).encode()
-      print("ai response", content)
-      self.send_response(200)
     else:
       content = b"File not found"
       self.send_response(404)
@@ -45,7 +39,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
         data = json.loads(body)
 
         response = self.handle_ai(data)
-        print("ai response", response)
+        #print("ai response", response)
 
         self.send_response(200)
       except Exception as e:
@@ -82,8 +76,9 @@ class SimpleHandler(BaseHTTPRequestHandler):
     y_coords = [f['y'] for f in food]
     sizes = [f.get('size', 1) for f in food]
 
-    # Fixed grid bounds: -1000 to 1000 on both axes
-    cell_size = 20
+    vmin = -25
+    vmax = 25
+    cell_size = 60
     x_min, x_max = -1500, 1500
     y_min, y_max = -1500, 1500
 
@@ -103,31 +98,37 @@ class SimpleHandler(BaseHTTPRequestHandler):
     heatmap_data = np.flipud(heatmap_data)
 
     # Update existing plot or create new one
-    if SimpleHandler._heatmap_figure is None or not plt.fignum_exists(SimpleHandler._heatmap_figure.number):
+    if SimpleHandler._heatmap_figure is None:
       # Create new figure
-      SimpleHandler._heatmap_figure, SimpleHandler._heatmap_axes = plt.subplots(figsize=(10, 10))
+      SimpleHandler._heatmap_figure, SimpleHandler._heatmap_axes = plt.subplots(figsize=(8, 8))
       SimpleHandler._heatmap_im = SimpleHandler._heatmap_axes.imshow(
-        heatmap_data, cmap='hot', interpolation='nearest',
-        extent=[x_min, x_max, y_min, y_max], aspect='auto', origin='lower'
+        heatmap_data, cmap='inferno', interpolation='bilinear',
+        extent=[x_min, x_max, y_min, y_max], aspect='auto', origin='lower',
+        vmin=vmin, vmax=vmax,
       )
+      # viridis, plasma, inferno, magma, cividis, turbo.
+      SimpleHandler._heatmap_im.set_clim(vmin=vmin, vmax=vmax)
       SimpleHandler._heatmap_axes.set_xlim(x_min, x_max)
       SimpleHandler._heatmap_axes.set_ylim(y_min, y_max)
-      SimpleHandler._heatmap_cbar = SimpleHandler._heatmap_figure.colorbar(
-        SimpleHandler._heatmap_im, ax=SimpleHandler._heatmap_axes, label='Food density (weighted by size)'
-      )
-      SimpleHandler._heatmap_axes.set_xlabel('X position')
-      SimpleHandler._heatmap_axes.set_ylabel('Y position')
-      SimpleHandler._heatmap_axes.set_title('Food Distribution Heatmap (10 units per cell)')
+      # SimpleHandler._heatmap_axes.set_xlabel('X position')
+      # SimpleHandler._heatmap_axes.set_ylabel('Y position')
+      SimpleHandler._heatmap_axes.set_title('Food Distribution Heatmap')
       SimpleHandler._heatmap_axes.grid(True, alpha=0.3)
+
+
+      # Draw a circle at the center of the heatmap figure
+      center_x = (x_min + x_max) / 2
+      center_y = (y_min + y_max) / 2
+      radius = 80  # or pick an appropriate radius based on domain
+      circle_patch = plt.Circle((center_x, center_y), radius, color='cyan', fill=True, linewidth=3, alpha=0.5)
+      SimpleHandler._heatmap_axes.add_patch(circle_patch)
+      # SimpleHandler._heatmap_center_circle = circle_patch
+
       plt.show(block=False)
     else:
       # Update existing plot (shape is always the same now with fixed range)
       SimpleHandler._heatmap_im.set_data(heatmap_data)
-      SimpleHandler._heatmap_im.set_extent([x_min, x_max, y_min, y_max])
-      SimpleHandler._heatmap_im.set_clim(vmin=heatmap_data.min(), vmax=heatmap_data.max())
-      SimpleHandler._heatmap_axes.set_xlim(x_min, x_max)
-      SimpleHandler._heatmap_axes.set_ylim(y_min, y_max)
-      SimpleHandler._heatmap_cbar.update_normal(SimpleHandler._heatmap_im)
+      #SimpleHandler._heatmap_im.set_clim(vmin=heatmap_data.min(), vmax=heatmap_data.max())
       SimpleHandler._heatmap_figure.canvas.draw()
       SimpleHandler._heatmap_figure.canvas.flush_events()
 
@@ -138,13 +139,25 @@ class SimpleHandler(BaseHTTPRequestHandler):
       return { "error": "No player" }
 
     food = signals.get("food")
-    if not food:
-      return { "angle": 0, "speedboost": False }
+    prey = signals.get("prey")
+    enemies = signals.get("enemies")
+    if food:
+      for enemy in enemies:
+        for enemy_part in enemy['parts']:
+          food.append({
+            'x': enemy_part['x'],
+            'y': enemy_part['y'],
+            'size': -50,
+          })
 
-    relative_food = list(map(lambda f: { "x": f['x'] - player['x'], "y": -(f['y'] - player['y']), "size": f['size'] }, food))
-    # print("relative food", relative_food)
+      for p in prey:
+        p['size'] = 50
 
-    self.generate_food_heatmap(relative_food)
+      food += prey
+
+      relative_food = list(map(lambda f: { "x": f['x'] - player['x'], "y": -(f['y'] - player['y']), "size": f['size'] }, food))
+      # print("relative food", relative_food)
+      self.generate_food_heatmap(relative_food)
 
     return { "angle": 0, "speedboost": False }
 

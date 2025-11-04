@@ -72,6 +72,9 @@ function getSnakeData(snake) {
     angle: snake.ang,
     speed: snake.wmd,
     boosted: snake.sfr,
+    // TODO: calculate actual size?
+    // also, gptz contains "dead" parts (if worm boosted and lost weight)
+    parts: snake.gptz.map(p => { return { x: p.xx, y: p.yy, size: 2 * snake.gptz.length } })
   }
 }
 
@@ -166,6 +169,7 @@ async function gameLoop() {
     if (!isPlaying) {
       console.log('game started!')
       isPlaying = true
+      return // skip this frame
     }
   }
 
@@ -178,7 +182,7 @@ async function gameLoop() {
 
   try {
     let resp = await aiQuery()
-    console.log('here would be ai query', resp, getScore())
+    // console.log('here would be ai query', resp, getScore())
   } catch (error) {
     console.error('error in ai query', error)
   }
