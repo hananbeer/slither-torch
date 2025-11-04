@@ -5,6 +5,7 @@ import matplotlib
 # matplotlib.use('TkAgg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.ndimage import gaussian_filter
 
 class SimpleHandler(BaseHTTPRequestHandler):
   # Class variables to persist the figure across calls
@@ -77,8 +78,8 @@ class SimpleHandler(BaseHTTPRequestHandler):
     y_coords = [f['y'] for f in food]
     sizes = [f.get('size', 1) for f in food]
 
-    vmin = -50
-    vmax = 50
+    vmin = -25
+    vmax = 25
     cell_size = 30
     x_min, x_max = -2000, 2000
     y_min, y_max = -2000, 2000
@@ -97,6 +98,9 @@ class SimpleHandler(BaseHTTPRequestHandler):
     # Rotate and flip for correct orientation
     heatmap_data = np.rot90(heatmap_data)
     heatmap_data = np.flipud(heatmap_data)
+    
+    # Apply Gaussian filter to create spillover effect
+    heatmap_data = gaussian_filter(heatmap_data, sigma=0.1)
 
     # Calculate vector fields from deltas
     # Create arrays to store aggregated vectors per cell
@@ -115,6 +119,10 @@ class SimpleHandler(BaseHTTPRequestHandler):
       if delta is None or not isinstance(delta, (list, tuple)) or len(delta) < 2:
         continue
       
+      mag = np.sqrt(delta[0]**2 + delta[1]**2)
+      if mag > 100:
+        continue
+
       delta = [delta[0] * 500, delta[1] * -500]
 
       # Find which cell this food item belongs to
@@ -163,7 +171,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
       # Create new figure
       SimpleHandler._heatmap_figure, SimpleHandler._heatmap_axes = plt.subplots(figsize=(8, 8))
       SimpleHandler._heatmap_im = SimpleHandler._heatmap_axes.imshow(
-        heatmap_data, cmap='inferno', interpolation='bilinear',
+        heatmap_data, cmap='plasma', interpolation='bilinear',
         extent=[x_min, x_max, y_min, y_max], aspect='auto', origin='lower',
         vmin=vmin, vmax=vmax,
       )
